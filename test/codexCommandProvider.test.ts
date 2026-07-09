@@ -1,14 +1,72 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { CodexAppServerRunner } from '../src/providers/codexAppServerClient';
 import { buildShellInvocation, CodexCommandProvider, type CommandRunner } from '../src/providers/codexCommandProvider';
 
-function createProvider(commandRunner: CommandRunner, command = 'codex-usage'): CodexCommandProvider {
+const unavailableAppServerRunner: CodexAppServerRunner = {
+  async readRateLimits() {
+    throw new Error('Codex app-server status is unavailable.');
+  }
+};
+
+function createProvider(commandRunner: CommandRunner, command = 'codex-usage', appServerRunner = unavailableAppServerRunner, enableAppServerStatus = false): CodexCommandProvider {
   return new CodexCommandProvider({
     getCommand: () => command,
+    getEnableAppServerStatus: () => enableAppServerStatus,
+    getCliPath: () => 'codex',
     getTimeoutMs: () => 50,
-    commandRunner
+    commandRunner,
+    appServerRunner
   });
 }
+
+test('Codex provider returns a connected snapshot for app-server rate limits', async () => {
+  let commandRunCount = 0;
+  const provider = createProvider({
+    async run() {
+      commandRunCount += 1;
+      throw new Error('should not run command fallback');
+    }
+  }, 'codex-usage', {
+    async readRateLimits() {
+      return {
+        rateLimits: {
+          primary: { usedPercent: 35, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+          secondary: { usedPercent: 28, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 86400 },
+          planType: 'plus'
+        }
+      };
+    }
+  }, true);
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'connected');
+  assert.equal(commandRunCount, 0);
+  if (result.status === 'connected') {
+    assert.equal(result.snapshot.remainingPercent, 65);
+    assert.equal(result.snapshot.resetIn, 'in 1h');
+    assert.equal(result.snapshot.weekPercent, 72);
+    assert.equal(result.snapshot.source, 'codex-app-server');
+  }
+});
+
+test('Codex provider falls back to the configured command when app-server fails', async () => {
+  const provider = createProvider({
+    async run() {
+      return JSON.stringify({
+        remainingPercent: 42,
+        resetIn: '1h',
+        weekPercent: 31
+      });
+    }
+  }, 'codex-usage', unavailableAppServerRunner, true);
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'connected');
+  if (result.status === 'connected') {
+    assert.equal(result.snapshot.source, 'configured-command');
+  }
+});
 
 test('Codex provider returns a connected snapshot for valid command output', async () => {
   const provider = createProvider({
@@ -31,6 +89,28 @@ test('Codex provider returns a connected snapshot for valid command output', asy
     assert.equal(result.snapshot.weekPercent, 31);
     assert.equal(result.snapshot.source, 'test-command');
   }
+});
+
+test('Codex provider does not launch app-server when disabled', async () => {
+  let appServerRunCount = 0;
+  const provider = createProvider({
+    async run() {
+      return JSON.stringify({
+        remainingPercent: 42,
+        resetIn: '1h',
+        weekPercent: 31
+      });
+    }
+  }, 'codex-usage', {
+    async readRateLimits() {
+      appServerRunCount += 1;
+      throw new Error('should not run app-server status');
+    }
+  }, false);
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'connected');
+  assert.equal(appServerRunCount, 0);
 });
 
 test('Codex provider reports not connected when no command is configured', async () => {
@@ -69,6 +149,20 @@ test('Codex provider reports not connected when command runner fails or times ou
   }
 });
 
+test('Codex provider reports not connected when app-server and command are unavailable', async () => {
+  const provider = createProvider({
+    async run() {
+      throw new Error('should not run');
+    }
+  }, '', unavailableAppServerRunner, true);
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'notConnected');
+  if (result.status === 'notConnected') {
+    assert.equal(result.reason, 'Codex app-server status is unavailable.');
+  }
+});
+
 test('Codex provider avoids overlapping command executions', async () => {
   let runCount = 0;
   let resolveRun: ((value: string) => void) | undefined;
@@ -83,6 +177,9 @@ test('Codex provider avoids overlapping command executions', async () => {
 
   const first = provider.refresh();
   const second = provider.refresh();
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
   assert.equal(runCount, 1);
 
   resolveRun?.(JSON.stringify({

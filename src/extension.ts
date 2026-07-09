@@ -12,6 +12,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const usageService = new UsageService([
     new CodexCommandProvider({
       getCommand: () => vscode.workspace.getConfiguration('agentUsage').get<string>('codex.command', ''),
+      getEnableAppServerStatus: () => vscode.workspace.getConfiguration('agentUsage').get<boolean>('codex.enableAppServerStatus', true),
+      getCliPath: () => vscode.workspace.getConfiguration('agentUsage').get<string>('codex.cliPath', ''),
       getTimeoutMs: () => vscode.workspace.getConfiguration('agentUsage').get<number>('codex.timeoutMs', 5000)
     }),
     new StaticUnavailableProvider('claude-code', 'Claude Code provider is not connected in the MVP.'),

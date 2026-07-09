@@ -45,7 +45,17 @@
         "agentUsage.codex.command": {
           "type": "string",
           "default": "",
-          "description": "Command that returns trusted Codex usage JSON."
+          "description": "Fallback command that returns trusted Codex usage JSON."
+        },
+        "agentUsage.codex.enableAppServerStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Collect Codex usage automatically through the Codex CLI app-server (account/rateLimits/read). Falls back to the configured command when unavailable."
+        },
+        "agentUsage.codex.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Codex CLI executable. Leave empty to use codex from PATH."
         },
         "agentUsage.codex.timeoutMs": {
           "type": "number",

@@ -1,5 +1,7 @@
 import { execFile } from 'child_process';
 import * as os from 'os';
+import { type CodexAppServerRunner, CodexAppServerClient } from './codexAppServerClient';
+import { parseCodexAppServerRateLimits } from './codexAppServerStatus';
 import type { UsageProvider, UsageResult } from '../usageTypes';
 import { notConnected } from '../usageTypes';
 import { parseJsonObject, toCodexSnapshot, validateCodexUsageCommandOutput } from '../validation';
@@ -10,8 +12,11 @@ export interface CommandRunner {
 
 export interface CodexCommandProviderOptions {
   getCommand(): string;
+  getEnableAppServerStatus(): boolean;
+  getCliPath(): string;
   getTimeoutMs(): number;
   commandRunner?: CommandRunner;
+  appServerRunner?: CodexAppServerRunner;
 }
 
 export interface ShellInvocation {
@@ -75,10 +80,12 @@ export class ShellCommandRunner implements CommandRunner {
 export class CodexCommandProvider implements UsageProvider {
   public readonly id = 'codex' as const;
   private readonly commandRunner: CommandRunner;
+  private readonly appServerRunner: CodexAppServerRunner;
   private pendingRefresh: Promise<UsageResult> | undefined;
 
   public constructor(private readonly options: CodexCommandProviderOptions) {
     this.commandRunner = options.commandRunner ?? new ShellCommandRunner();
+    this.appServerRunner = options.appServerRunner ?? new CodexAppServerClient();
   }
 
   public refresh(): Promise<UsageResult> {
@@ -95,12 +102,44 @@ export class CodexCommandProvider implements UsageProvider {
 
   private async refreshInternal(): Promise<UsageResult> {
     const command = this.options.getCommand().trim();
+    const cliPath = this.options.getCliPath().trim() || 'codex';
     const timeoutMs = this.options.getTimeoutMs();
 
-    if (!command) {
-      return notConnected(this.id, 'Codex command is not configured.');
+    let appServerUnavailableReason: string | undefined;
+    if (this.options.getEnableAppServerStatus()) {
+      const appServerResult = await this.refreshFromAppServer(cliPath, timeoutMs);
+      if (appServerResult.status === 'connected') {
+        return appServerResult;
+      }
+      appServerUnavailableReason = appServerResult.reason;
     }
 
+    if (!command) {
+      return notConnected(this.id, appServerUnavailableReason ?? 'Codex command is not configured.');
+    }
+
+    return this.refreshFromCommand(command, timeoutMs);
+  }
+
+  private async refreshFromAppServer(cliPath: string, timeoutMs: number): Promise<UsageResult> {
+    try {
+      const response = await this.appServerRunner.readRateLimits(cliPath, timeoutMs);
+      const parsed = parseCodexAppServerRateLimits(response);
+      if (!parsed.ok || !parsed.value) {
+        return notConnected(this.id, parsed.error ?? 'Codex app-server response is invalid.');
+      }
+
+      return {
+        status: 'connected',
+        snapshot: toCodexSnapshot(parsed.value)
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      return notConnected(this.id, message || 'Codex app-server status is unavailable.');
+    }
+  }
+
+  private async refreshFromCommand(command: string, timeoutMs: number): Promise<UsageResult> {
     try {
       const stdout = await this.commandRunner.run(command, timeoutMs);
       const json = parseJsonObject(stdout.trim());
