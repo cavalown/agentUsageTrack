@@ -14,14 +14,45 @@ export interface CodexCommandProviderOptions {
   commandRunner?: CommandRunner;
 }
 
+export interface ShellInvocation {
+  shell: string;
+  args: string[];
+}
+
+function isWindowsPlatform(platform = os.platform()): boolean {
+  return platform === 'win32';
+}
+
+function isLoginShellCompatible(shell: string): boolean {
+  const normalized = shell.toLowerCase();
+  return normalized.endsWith('/bash') || normalized.endsWith('/zsh') || normalized.endsWith('\\bash.exe') || normalized.endsWith('\\zsh.exe');
+}
+
+export function buildShellInvocation(command: string, options: { platform?: NodeJS.Platform; shell?: string; comSpec?: string } = {}): ShellInvocation {
+  const platform = options.platform ?? os.platform();
+
+  if (isWindowsPlatform(platform)) {
+    const shell = options.shell || options.comSpec || process.env.ComSpec || 'cmd.exe';
+    return {
+      shell,
+      args: ['/d', '/s', '/c', command]
+    };
+  }
+
+  const shell = options.shell || process.env.SHELL || '/bin/sh';
+  return {
+    shell,
+    args: [isLoginShellCompatible(shell) ? '-lc' : '-c', command]
+  };
+}
+
 export class ShellCommandRunner implements CommandRunner {
   public run(command: string, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      const shell = process.env.SHELL || (os.platform() === 'win32' ? process.env.ComSpec || 'cmd.exe' : '/bin/sh');
-      const shellFlag = os.platform() === 'win32' ? '/d /s /c' : '-lc';
+      const invocation = buildShellInvocation(command);
       const child = execFile(
-        shell,
-        [shellFlag, command],
+        invocation.shell,
+        invocation.args,
         {
           timeout: timeoutMs,
           maxBuffer: 1024 * 1024,

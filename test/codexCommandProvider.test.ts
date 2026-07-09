@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CodexCommandProvider, type CommandRunner } from '../src/providers/codexCommandProvider';
+import { buildShellInvocation, CodexCommandProvider, type CommandRunner } from '../src/providers/codexCommandProvider';
 
 function createProvider(commandRunner: CommandRunner, command = 'codex-usage'): CodexCommandProvider {
   return new CodexCommandProvider({
@@ -95,4 +95,36 @@ test('Codex provider avoids overlapping command executions', async () => {
   assert.equal(firstResult.status, 'connected');
   assert.equal(secondResult.status, 'connected');
   assert.equal(runCount, 1);
+});
+
+test('shell invocation uses -c for generic Unix sh', () => {
+  const invocation = buildShellInvocation('codex-usage', {
+    platform: 'linux',
+    shell: '/bin/sh'
+  });
+
+  assert.equal(invocation.shell, '/bin/sh');
+  assert.deepEqual(invocation.args, ['-c', 'codex-usage']);
+});
+
+test('shell invocation uses -lc for bash and zsh', () => {
+  assert.deepEqual(buildShellInvocation('codex-usage', {
+    platform: 'darwin',
+    shell: '/bin/zsh'
+  }).args, ['-lc', 'codex-usage']);
+
+  assert.deepEqual(buildShellInvocation('codex-usage', {
+    platform: 'linux',
+    shell: '/usr/bin/bash'
+  }).args, ['-lc', 'codex-usage']);
+});
+
+test('shell invocation passes Windows cmd switches separately', () => {
+  const invocation = buildShellInvocation('codex-usage', {
+    platform: 'win32',
+    comSpec: 'C:\\Windows\\System32\\cmd.exe'
+  });
+
+  assert.equal(invocation.shell, 'C:\\Windows\\System32\\cmd.exe');
+  assert.deepEqual(invocation.args, ['/d', '/s', '/c', 'codex-usage']);
 });
