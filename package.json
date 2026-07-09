@@ -1,0 +1,89 @@
+{
+  "name": "agent-usage-track",
+  "displayName": "Agent Usage Track",
+  "description": "Shows trusted coding-agent usage in VS Code.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:agentUsage.dashboard",
+    "onCommand:agentUsage.openDashboard",
+    "onCommand:agentUsage.refresh",
+    "onCommand:agentUsage.setActiveAgent",
+    "onCommand:agentUsage.showLogs"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentUsage.openDashboard",
+        "title": "Agent Usage: Open Dashboard"
+      },
+      {
+        "command": "agentUsage.refresh",
+        "title": "Agent Usage: Refresh"
+      },
+      {
+        "command": "agentUsage.setActiveAgent",
+        "title": "Agent Usage: Set Active Agent"
+      },
+      {
+        "command": "agentUsage.showLogs",
+        "title": "Agent Usage: Show Logs"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Usage",
+      "properties": {
+        "agentUsage.codex.command": {
+          "type": "string",
+          "default": "",
+          "description": "Command that returns trusted Codex usage JSON."
+        },
+        "agentUsage.codex.timeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 30000,
+          "description": "Maximum time to wait for the Codex usage command."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentUsage",
+          "title": "Agent Usage",
+          "icon": "resources/agent-usage.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentUsage": [
+        {
+          "id": "agentUsage.dashboard",
+          "name": "Dashboard",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/test/**/*.test.js",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.92.0",
+    "typescript": "^5.5.0"
+  }
+}

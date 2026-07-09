@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { CodexCommandProvider, type CommandRunner } from '../src/providers/codexCommandProvider';
+
+function createProvider(commandRunner: CommandRunner, command = 'codex-usage'): CodexCommandProvider {
+  return new CodexCommandProvider({
+    getCommand: () => command,
+    getTimeoutMs: () => 50,
+    commandRunner
+  });
+}
+
+test('Codex provider returns a connected snapshot for valid command output', async () => {
+  const provider = createProvider({
+    async run() {
+      return JSON.stringify({
+        remainingPercent: 42,
+        resetIn: '1h',
+        weekPercent: 31,
+        source: 'test-command',
+        updatedAt: '2026-07-09T10:00:00.000Z'
+      });
+    }
+  });
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'connected');
+  if (result.status === 'connected') {
+    assert.equal(result.snapshot.remainingPercent, 42);
+    assert.equal(result.snapshot.resetIn, '1h');
+    assert.equal(result.snapshot.weekPercent, 31);
+    assert.equal(result.snapshot.source, 'test-command');
+  }
+});
+
+test('Codex provider reports not connected when no command is configured', async () => {
+  const provider = createProvider({
+    async run() {
+      throw new Error('should not run');
+    }
+  }, '');
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'notConnected');
+});
+
+test('Codex provider reports not connected for invalid command output', async () => {
+  const provider = createProvider({
+    async run() {
+      return 'not json';
+    }
+  });
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'notConnected');
+});
+
+test('Codex provider reports not connected when command runner fails or times out', async () => {
+  const provider = createProvider({
+    async run() {
+      throw new Error('Command timed out.');
+    }
+  });
+
+  const result = await provider.refresh();
+  assert.equal(result.status, 'notConnected');
+  if (result.status === 'notConnected') {
+    assert.equal(result.reason, 'Command timed out.');
+  }
+});
+
+test('Codex provider avoids overlapping command executions', async () => {
+  let runCount = 0;
+  let resolveRun: ((value: string) => void) | undefined;
+  const provider = createProvider({
+    run() {
+      runCount += 1;
+      return new Promise<string>((resolve) => {
+        resolveRun = resolve;
+      });
+    }
+  });
+
+  const first = provider.refresh();
+  const second = provider.refresh();
+  assert.equal(runCount, 1);
+
+  resolveRun?.(JSON.stringify({
+    remainingPercent: 42,
+    resetIn: '1h',
+    weekPercent: 31
+  }));
+
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.status, 'connected');
+  assert.equal(secondResult.status, 'connected');
+  assert.equal(runCount, 1);
+});
