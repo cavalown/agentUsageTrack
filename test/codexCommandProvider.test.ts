@@ -9,14 +9,15 @@ const unavailableAppServerRunner: CodexAppServerRunner = {
   }
 };
 
-function createProvider(commandRunner: CommandRunner, command = 'codex-usage', appServerRunner = unavailableAppServerRunner, enableAppServerStatus = false): CodexCommandProvider {
+function createProvider(commandRunner: CommandRunner, command = 'codex-usage', appServerRunner = unavailableAppServerRunner, enableAppServerStatus = false, appServerFailureBackoffMs?: number): CodexCommandProvider {
   return new CodexCommandProvider({
     getCommand: () => command,
     getEnableAppServerStatus: () => enableAppServerStatus,
     getCliPath: () => 'codex',
     getTimeoutMs: () => 50,
     commandRunner,
-    appServerRunner
+    appServerRunner,
+    appServerFailureBackoffMs
   });
 }
 
@@ -147,6 +148,49 @@ test('Codex provider reports not connected when command runner fails or times ou
   if (result.status === 'notConnected') {
     assert.equal(result.reason, 'Command timed out.');
   }
+});
+
+test('Codex provider skips app-server retries within the failure backoff window', async () => {
+  let appServerRunCount = 0;
+  const provider = createProvider({
+    async run() {
+      throw new Error('should not run');
+    }
+  }, '', {
+    async readRateLimits() {
+      appServerRunCount += 1;
+      throw new Error('Codex app-server status is unavailable.');
+    }
+  }, true, 60_000);
+
+  const first = await provider.refresh();
+  const second = await provider.refresh();
+
+  assert.equal(appServerRunCount, 1);
+  assert.equal(first.status, 'notConnected');
+  assert.equal(second.status, 'notConnected');
+  if (second.status === 'notConnected') {
+    assert.equal(second.reason, 'Codex app-server status is unavailable.');
+  }
+});
+
+test('Codex provider retries app-server after the backoff window elapses', async () => {
+  let appServerRunCount = 0;
+  const provider = createProvider({
+    async run() {
+      throw new Error('should not run');
+    }
+  }, '', {
+    async readRateLimits() {
+      appServerRunCount += 1;
+      throw new Error('Codex app-server status is unavailable.');
+    }
+  }, true, 0);
+
+  await provider.refresh();
+  await provider.refresh();
+
+  assert.equal(appServerRunCount, 2);
 });
 
 test('Codex provider reports not connected when app-server and command are unavailable', async () => {

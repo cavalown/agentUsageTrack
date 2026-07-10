@@ -17,10 +17,11 @@ function rateLimitsResponse(overrides: Record<string, unknown> = {}): Record<str
   };
 }
 
-test('parses a complete app-server rate limits response', () => {
+test('parses a complete app-server rate limits response into a snapshot', () => {
   const parsed = parseCodexAppServerRateLimits(rateLimitsResponse(), nowMs);
 
   assert.equal(parsed.ok, true);
+  assert.equal(parsed.value?.agentId, 'codex');
   assert.equal(parsed.value?.remainingPercent, 65);
   assert.equal(parsed.value?.weekPercent, 72);
   assert.equal(parsed.value?.resetIn, 'in 2h 15m');
@@ -49,12 +50,21 @@ test('rejects a response missing a limit window', () => {
   assert.equal(parsed.ok, false);
 });
 
-test('rejects out-of-range percentages', () => {
-  const tooHigh = parseCodexAppServerRateLimits(rateLimitsResponse({ primary: { usedPercent: 140 } }), nowMs);
-  assert.equal(tooHigh.ok, false);
+test('clamps overage usage to 0% remaining instead of rejecting', () => {
+  const parsed = parseCodexAppServerRateLimits(rateLimitsResponse({ primary: { usedPercent: 100.4 } }), nowMs);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value?.remainingPercent, 0);
+});
 
+test('rejects invalid percentages', () => {
   const notNumber = parseCodexAppServerRateLimits(rateLimitsResponse({ primary: { usedPercent: '35' } }), nowMs);
   assert.equal(notNumber.ok, false);
+
+  const negative = parseCodexAppServerRateLimits(rateLimitsResponse({ primary: { usedPercent: -5 } }), nowMs);
+  assert.equal(negative.ok, false);
+
+  const infinite = parseCodexAppServerRateLimits(rateLimitsResponse({ primary: { usedPercent: Number.POSITIVE_INFINITY } }), nowMs);
+  assert.equal(infinite.ok, false);
 });
 
 test('handles a window without a reset timestamp', () => {

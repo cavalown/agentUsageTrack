@@ -1,3 +1,19 @@
+## MODIFIED Requirements
+
+### Requirement: Codex snapshot includes required display fields
+
+The Codex provider SHALL require usage sources to include the Codex display fields needed by the Status Bar: remaining percentage, reset text, and weekly remaining percentage.
+
+#### Scenario: Required fields are present
+
+- **WHEN** a usage source provides valid remaining percentage, reset text, and weekly remaining percentage
+- **THEN** the Codex provider exposes those values to the dashboard and Status Bar
+
+#### Scenario: Required fields are missing
+
+- **WHEN** a usage source omits a required display field
+- **THEN** the Codex provider rejects the output and reports Codex as `not connected`
+
 ## ADDED Requirements
 
 ### Requirement: Codex provider uses Codex app-server rate limits when enabled

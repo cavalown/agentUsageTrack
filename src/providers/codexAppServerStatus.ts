@@ -1,22 +1,30 @@
-import type { CodexUsageCommandOutput, ValidationResult } from '../validation';
-import { isValidPercent } from '../validation';
+import type { UsageSnapshot } from '../usageTypes';
+import type { ValidationResult } from '../validation';
+import { isRecord } from '../validation';
 
 interface RateLimitWindow {
   usedPercent: number;
   resetsAt?: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function readWindow(value: unknown): RateLimitWindow | undefined {
-  if (!isRecord(value) || !isValidPercent(value.usedPercent)) {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  // Accept overage (>100%) so an exhausted limit still renders as 0% remaining
+  // instead of failing the whole snapshot.
+  const usedPercent = value.usedPercent;
+  if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) || usedPercent < 0) {
     return undefined;
   }
 
   const resetsAt = typeof value.resetsAt === 'number' && Number.isFinite(value.resetsAt) ? value.resetsAt : undefined;
-  return { usedPercent: value.usedPercent, resetsAt };
+  return { usedPercent, resetsAt };
+}
+
+function toRemainingPercent(usedPercent: number): number {
+  return Math.max(0, 100 - usedPercent);
 }
 
 export function formatResetsAt(resetsAtSeconds: number | undefined, nowMs: number): string {
@@ -42,7 +50,7 @@ export function formatResetsAt(resetsAtSeconds: number | undefined, nowMs: numbe
   return `in ${minutes}m`;
 }
 
-export function parseCodexAppServerRateLimits(value: unknown, nowMs = Date.now()): ValidationResult<CodexUsageCommandOutput> {
+export function parseCodexAppServerRateLimits(value: unknown, nowMs = Date.now()): ValidationResult<UsageSnapshot> {
   if (!isRecord(value) || !isRecord(value.rateLimits)) {
     return { ok: false, error: 'Codex app-server response did not include rate limits.' };
   }
@@ -57,9 +65,10 @@ export function parseCodexAppServerRateLimits(value: unknown, nowMs = Date.now()
   return {
     ok: true,
     value: {
-      remainingPercent: Math.max(0, Math.min(100, 100 - primary.usedPercent)),
+      agentId: 'codex',
+      remainingPercent: toRemainingPercent(primary.usedPercent),
       resetIn: formatResetsAt(primary.resetsAt, nowMs),
-      weekPercent: Math.max(0, Math.min(100, 100 - secondary.usedPercent)),
+      weekPercent: toRemainingPercent(secondary.usedPercent),
       source: 'codex-app-server',
       updatedAt: new Date(nowMs).toISOString()
     }

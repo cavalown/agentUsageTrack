@@ -62,7 +62,7 @@
           "default": 5000,
           "minimum": 500,
           "maximum": 30000,
-          "description": "Maximum time to wait for the Codex usage command."
+          "description": "Maximum time to wait for each Codex usage source (the app-server exchange and the configured command are bounded separately)."
         }
       }
     },

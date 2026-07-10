@@ -141,7 +141,7 @@ export class AgentUsageDashboardProvider implements vscode.WebviewViewProvider {
   </div>
   <div class="metric">
     <div class="label">Week</div>
-    <div class="value">${snapshot.weekPercent}%</div>
+    <div class="value">${snapshot.weekPercent}% left</div>
   </div>
   <div class="metric">
     <div class="label">Source</div>

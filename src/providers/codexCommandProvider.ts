@@ -1,10 +1,12 @@
 import { execFile } from 'child_process';
-import * as os from 'os';
 import { type CodexAppServerRunner, CodexAppServerClient } from './codexAppServerClient';
 import { parseCodexAppServerRateLimits } from './codexAppServerStatus';
+import { buildShellInvocation, type ShellInvocation } from './shellInvocation';
 import type { UsageProvider, UsageResult } from '../usageTypes';
 import { notConnected } from '../usageTypes';
 import { parseJsonObject, toCodexSnapshot, validateCodexUsageCommandOutput } from '../validation';
+
+export { buildShellInvocation, type ShellInvocation } from './shellInvocation';
 
 export interface CommandRunner {
   run(command: string, timeoutMs: number): Promise<string>;
@@ -17,38 +19,7 @@ export interface CodexCommandProviderOptions {
   getTimeoutMs(): number;
   commandRunner?: CommandRunner;
   appServerRunner?: CodexAppServerRunner;
-}
-
-export interface ShellInvocation {
-  shell: string;
-  args: string[];
-}
-
-function isWindowsPlatform(platform = os.platform()): boolean {
-  return platform === 'win32';
-}
-
-function isLoginShellCompatible(shell: string): boolean {
-  const normalized = shell.toLowerCase();
-  return normalized.endsWith('/bash') || normalized.endsWith('/zsh') || normalized.endsWith('\\bash.exe') || normalized.endsWith('\\zsh.exe');
-}
-
-export function buildShellInvocation(command: string, options: { platform?: NodeJS.Platform; shell?: string; comSpec?: string } = {}): ShellInvocation {
-  const platform = options.platform ?? os.platform();
-
-  if (isWindowsPlatform(platform)) {
-    const shell = options.shell || options.comSpec || process.env.ComSpec || 'cmd.exe';
-    return {
-      shell,
-      args: ['/d', '/s', '/c', command]
-    };
-  }
-
-  const shell = options.shell || process.env.SHELL || '/bin/sh';
-  return {
-    shell,
-    args: [isLoginShellCompatible(shell) ? '-lc' : '-c', command]
-  };
+  appServerFailureBackoffMs?: number;
 }
 
 export class ShellCommandRunner implements CommandRunner {
@@ -77,15 +48,20 @@ export class ShellCommandRunner implements CommandRunner {
   }
 }
 
+const defaultAppServerFailureBackoffMs = 60_000;
+
 export class CodexCommandProvider implements UsageProvider {
   public readonly id = 'codex' as const;
   private readonly commandRunner: CommandRunner;
   private readonly appServerRunner: CodexAppServerRunner;
+  private readonly appServerFailureBackoffMs: number;
   private pendingRefresh: Promise<UsageResult> | undefined;
+  private lastAppServerFailure: { at: number; reason: string } | undefined;
 
   public constructor(private readonly options: CodexCommandProviderOptions) {
     this.commandRunner = options.commandRunner ?? new ShellCommandRunner();
     this.appServerRunner = options.appServerRunner ?? new CodexAppServerClient();
+    this.appServerFailureBackoffMs = options.appServerFailureBackoffMs ?? defaultAppServerFailureBackoffMs;
   }
 
   public refresh(): Promise<UsageResult> {
@@ -122,21 +98,33 @@ export class CodexCommandProvider implements UsageProvider {
   }
 
   private async refreshFromAppServer(cliPath: string, timeoutMs: number): Promise<UsageResult> {
+    // A recent failure means codex is likely still unavailable; skip the attempt
+    // so refreshes do not repeatedly pay the full app-server timeout.
+    if (this.lastAppServerFailure && Date.now() - this.lastAppServerFailure.at < this.appServerFailureBackoffMs) {
+      return notConnected(this.id, this.lastAppServerFailure.reason);
+    }
+
     try {
       const response = await this.appServerRunner.readRateLimits(cliPath, timeoutMs);
       const parsed = parseCodexAppServerRateLimits(response);
       if (!parsed.ok || !parsed.value) {
-        return notConnected(this.id, parsed.error ?? 'Codex app-server response is invalid.');
+        return this.recordAppServerFailure(parsed.error ?? 'Codex app-server response is invalid.');
       }
 
+      this.lastAppServerFailure = undefined;
       return {
         status: 'connected',
-        snapshot: toCodexSnapshot(parsed.value)
+        snapshot: parsed.value
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
-      return notConnected(this.id, message || 'Codex app-server status is unavailable.');
+      return this.recordAppServerFailure(message || 'Codex app-server status is unavailable.');
     }
+  }
+
+  private recordAppServerFailure(reason: string): UsageResult {
+    this.lastAppServerFailure = { at: Date.now(), reason };
+    return notConnected(this.id, reason);
   }
 
   private async refreshFromCommand(command: string, timeoutMs: number): Promise<UsageResult> {

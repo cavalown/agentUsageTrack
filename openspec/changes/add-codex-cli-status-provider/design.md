@@ -33,20 +33,22 @@ Local investigation confirmed two things:
 
 2. Use a short-lived `codex app-server` process per refresh.
 
-   The client spawns `codex app-server`, speaks newline-delimited JSON-RPC over stdio (`initialize` request → `initialized` notification → `account/rateLimits/read`), then terminates the process. Responses are matched by request `id`, not arrival order — out-of-order delivery was observed during verification. A single overall timeout bounds the whole exchange and always kills the child process. The provider depends on a runner interface so refresh behavior can be tested without spawning Codex.
+   The client spawns `codex app-server`, speaks newline-delimited JSON-RPC over stdio (`initialize` request → `initialized` notification → `account/rateLimits/read`), then terminates the process. Responses are matched by request `id`, not arrival order — out-of-order delivery was observed during verification — and messages carrying a `method` field (server-initiated requests/notifications) are ignored rather than misread as responses. Process teardown is wired to the `close` event (after stdio drains) and `stdin` stream errors are handled so an early codex exit cannot raise an uncaught exception. A single overall timeout bounds the whole exchange and always kills the child process and closes its streams. The provider depends on a runner interface so refresh behavior can be tested without spawning Codex.
 
-3. Validate and map the response into the existing snapshot model.
+   Launching matches the portability of the configured-command runner: on macOS/Linux the CLI path is single-quoted and `exec`'d through the user's login shell so rc-file PATH entries (nvm, homebrew) apply; on Windows the quoted path runs through `cmd.exe /d /s /c` with verbatim arguments so paths containing spaces work and setting values are not shell-interpreted.
+
+3. Validate and map the response into the shared snapshot model.
 
    From `GetAccountRateLimitsResponse.rateLimits` the provider reads only:
-   - `primary.usedPercent` → `remainingPercent = 100 - usedPercent`
+   - `primary.usedPercent` → `remainingPercent = max(0, 100 - usedPercent)`
    - `primary.resetsAt` → formatted into human-readable `resetIn` text
-   - `secondary.usedPercent` → `weekPercent = 100 - usedPercent`
+   - `secondary.usedPercent` → `weekPercent = max(0, 100 - usedPercent)`
 
-   `planType`, `credits`, `rateLimitResetCredits`, and any other account fields are ignored and never surfaced in snapshots, logs, or error messages. Responses missing either window or containing out-of-range percentages are rejected.
+   Both percentage fields mean "remaining", and the Status Bar and dashboard render them with an explicit `% left` qualifier. Overage responses (`usedPercent > 100`, possible at quota exhaustion) clamp to 0% remaining instead of failing the snapshot. The parser returns a `UsageSnapshot` directly rather than reusing the configured-command output DTO. `planType`, `credits`, `rateLimitResetCredits`, and any other account fields are ignored and never surfaced in snapshots, logs, or error messages. Responses missing either window or containing negative or non-numeric percentages are rejected.
 
 4. Fall back gracefully.
 
-   Any app-server failure (spawn error, handshake error, timeout, invalid response) degrades to the configured JSON command when one is set, otherwise to `not connected` with a generic reason. Raw process output is never included in error messages.
+   Any app-server failure (spawn error, handshake error, timeout, invalid response) degrades to the configured JSON command when one is set, otherwise to `not connected` with a generic reason. Raw process output is never included in error messages. Failures are remembered for a short backoff window (60s) so scheduled refreshes do not repeatedly pay the full app-server timeout while codex stays unavailable; a successful read clears the backoff.
 
 ## Risks / Trade-offs
 

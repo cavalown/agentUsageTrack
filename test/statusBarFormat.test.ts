@@ -16,7 +16,7 @@ test('formats connected Codex usage for the Status Bar', () => {
     }
   };
 
-  assert.equal(formatStatusBarText('codex', result), 'Codex · 42% left · reset 1h · week 31%');
+  assert.equal(formatStatusBarText('codex', result), 'Codex · 42% left · reset 1h · week 31% left');
 });
 
 test('formats unavailable selected agent for the Status Bar', () => {

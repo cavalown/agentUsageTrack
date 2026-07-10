@@ -5,7 +5,7 @@ Agent Usage Track is a VS Code extension that shows trusted coding-agent usage i
 - An Agent Usage dashboard with cards for Codex, Claude Code, and Antigravity.
 - A Status Bar indicator for the manually selected active agent.
 
-The MVP supports Codex through a user-configured command. Claude Code and Antigravity are shown as `not connected` until trusted providers are added.
+Codex usage is collected automatically through the Codex CLI app-server (`account/rateLimits/read`) when Codex CLI is installed and authenticated. A user-configured command remains available as a fallback/debug source. Claude Code and Antigravity are shown as `not connected` until trusted providers are added.
 
 ## Codex Command Contract
 
@@ -23,9 +23,9 @@ Configure `agentUsage.codex.command` with a command that prints one JSON object 
 
 Required fields:
 
-- `remainingPercent`: number from 0 to 100.
+- `remainingPercent`: number from 0 to 100, the 5h-limit percentage remaining.
 - `resetIn`: non-empty string shown after `reset`.
-- `weekPercent`: number from 0 to 100.
+- `weekPercent`: number from 0 to 100, the weekly-limit percentage remaining.
 
 Optional fields:
 

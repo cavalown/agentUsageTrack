@@ -10,5 +10,5 @@ export function formatStatusBarText(agentId: AgentId, result: UsageResult): stri
   }
 
   const snapshot = result.snapshot;
-  return `${label} · ${snapshot.remainingPercent}% left · reset ${snapshot.resetIn} · week ${snapshot.weekPercent}%`;
+  return `${label} · ${snapshot.remainingPercent}% left · reset ${snapshot.resetIn} · week ${snapshot.weekPercent}% left`;
 }
