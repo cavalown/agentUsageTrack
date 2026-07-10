@@ -1,9 +1,7 @@
 ## Purpose
 
 Define how the VS Code extension presents trusted agent usage snapshots in the dashboard and Status Bar.
-
 ## Requirements
-
 ### Requirement: Dashboard displays supported agent cards
 
 The extension SHALL provide an Agent Usage dashboard in VS Code that displays separate cards for Codex, Claude Code, and Antigravity.
@@ -20,12 +18,12 @@ The extension SHALL provide an Agent Usage dashboard in VS Code that displays se
 
 ### Requirement: Dashboard displays trusted snapshot details
 
-The dashboard SHALL display trusted usage snapshot details for connected agents, including remaining usage, reset information, weekly usage, source, and last update time when those fields are available.
+The dashboard SHALL display trusted usage snapshot details for connected agents, including remaining usage, reset information, weekly remaining usage, source, and last update time when those fields are available.
 
 #### Scenario: Codex has a valid trusted snapshot
 
 - **WHEN** the Codex provider returns a valid trusted snapshot
-- **THEN** the Codex card displays the remaining usage, reset information, weekly usage, source, and last update time from that snapshot
+- **THEN** the Codex card displays the remaining usage, reset information, weekly remaining usage, source, and last update time from that snapshot
 
 ### Requirement: Status Bar displays the manually selected agent
 
@@ -34,7 +32,7 @@ The extension SHALL provide a VS Code Status Bar item that displays the manually
 #### Scenario: Codex is selected as active agent
 
 - **WHEN** Codex is selected as the active agent and Codex has a valid trusted snapshot
-- **THEN** the Status Bar displays Codex usage in the format `Codex · <remaining>% left · reset <reset> · week <week>%`
+- **THEN** the Status Bar displays Codex usage in the format `Codex · <remaining>% left · reset <reset> · week <week>% left`
 
 #### Scenario: Selected agent is not connected
 
@@ -67,3 +65,4 @@ The extension SHALL open the Agent Usage dashboard when the user activates the S
 
 - **WHEN** the user clicks the Agent Usage Status Bar item
 - **THEN** the extension opens the Agent Usage dashboard
+
