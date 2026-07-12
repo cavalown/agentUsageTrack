@@ -220,3 +220,12 @@ Not OK:
 - changed implementation before proving the runner could work end to end
 - allowed the investigation to drift into low-signal retries
 - did not pause earlier to ask whether to keep or discard the experimental scaffold
+
+**Codex Usage Retrieval**
+
+- **Provider:** `CodexCommandProvider` — implements `UsageProvider` and is the primary codex usage provider used by the extension. See [src/providers/codexCommandProvider.ts](src/providers/codexCommandProvider.ts) for implementation.
+- **App-server (preferred) path:** when enabled the provider first attempts to query the Codex app-server via `CodexAppServerClient.readRateLimits`. The client starts the CLI in `app-server` mode, performs a JSON-RPC `initialize` handshake and then calls `account/rateLimits/read`. See [src/providers/codexAppServerClient.ts](src/providers/codexAppServerClient.ts) for the protocol and timeout/error handling. A recent failed app-server call is cached and short-circuited for a backoff period (default 60_000ms).
+- **CLI command (fallback) path:** if app-server is unavailable or disabled, the provider runs a configured CLI command (default `codex` or `agentUsage.codex.command`) using a `CommandRunner` (`ShellCommandRunner` uses `execFile`). The stdout is parsed as JSON (`parseJsonObject`), validated (`validateCodexUsageCommandOutput`), and converted to a `UsageSnapshot` (`toCodexSnapshot`). See [src/providers/codexCommandProvider.ts](src/providers/codexCommandProvider.ts) and the validator in [src/validation.ts](src/validation.ts).
+- **Orchestration:** `UsageService` registers `UsageProvider`s, keeps the latest snapshots, and exposes `refreshAgent` / `refreshAll` which call each provider's `refresh()` and then emit an `updated` event with all snapshots. See [src/usageService.ts](src/usageService.ts).
+- **Types / Shape:** the returned data is a `UsageResult` (either `connected` with a `UsageSnapshot`, or `notConnected` with a reason). See [src/usageTypes.ts](src/usageTypes.ts) for the exact fields.
+- **Behavioral notes:** the implementation prefers structured app-server responses when available, falls back to a user-configured command, validates and sanitizes output before exposing it, and avoids repeatedly waiting on a failing app-server by using a short backoff.
